@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>水道光熱費メーター管理</title>
+<meta name="theme-color" content="#20303D">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --paper:#F3F1EC;
+    --ink:#20303D;
+    --ink-soft:#5B6B76;
+    --line:#D9D4C7;
+    --card:#FFFFFF;
+    --elec:#C98A1F;
+    --elec-bg:#FBF1DD;
+    --gas:#C4502A;
+    --gas-bg:#FBEAE2;
+    --water:#256F8A;
+    --water-bg:#E4F0F4;
+    --sum:#3C4A3E;
+    --sum-bg:#E9EEE7;
+    --danger:#B23A3A;
+    --sync:#4A5A78;
+    --sync-bg:#E7EAF2;
+    --ok:#3C7A4E;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:40px;
+  }
+  header{
+    padding:22px 18px 14px;
+    border-bottom:1px solid var(--line);
+    background:var(--paper);
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  header h1{
+    font-size:1.05rem;
+    letter-spacing:.04em;
+    margin:0 0 2px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    gap:.5em;
+  }
+  header h1 svg{width:20px;height:20px;flex:none;}
+  header h1 .version-badge{
+    font-size:0.65rem;
+    font-weight:600;
+    background:var(--ink-soft);
+    color:#fff;
+    padding:2px 6px;
+    border-radius:10px;
+    margin-left:auto;
+    letter-spacing:0;
+  }
+  header p{
+    margin:0;
+    font-size:.72rem;
+    color:var(--ink-soft);
+    letter-spacing:.03em;
+  }
+  nav.tabs{
+    display:flex;
+    gap:6px;
+    padding:10px 14px 0;
+    background:var(--paper);
+    position:sticky;
+    top:64px;
+    z-index:19;
+    overflow-x:auto;
+    border-bottom:1px solid var(--line);
+  }
+  nav.tabs button{
+    appearance:none;
+    border:none;
+    background:transparent;
+    padding:9px 12px 11px;
+    font-size:.8rem;
+    font-weight:600;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    gap:5px;
+    border-bottom:2px solid transparent;
+    white-space:nowrap;
+    cursor:pointer;
+  }
+  nav.tabs button svg{width:15px;height:15px;}
+  nav.tabs button.active{color:var(--ink);border-bottom-color:currentColor;}
+  nav.tabs button[data-tab="electric"].active{color:var(--elec);}
+  nav.tabs button[data-tab="gas"].active{color:var(--gas);}
+  nav.tabs button[data-tab="water"].active{color:var(--water);}
+  nav.tabs button[data-tab="summary"].active{color:var(--sum);}
+  nav.tabs button[data-tab="settings"].active{color:var(--sync);}
+  .accent-sync{color:var(--sync);}
+  .sync-status{
+    display:flex;align-items:center;gap:8px;
+    background:var(--sync-bg);border-radius:8px;
+    padding:9px 12px;font-size:.76rem;color:var(--sync);
+    margin-top:12px;
+  }
+  .sync-status.ok{color:var(--ok);}
+  .sync-status.err{color:var(--danger);}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
+  .field-note{font-size:.68rem;color:var(--ink-soft);margin-top:2px;}
+
+  main{padding:16px 14px 0;max-width:720px;margin:0 auto;}
+  section.panel{display:none;}
+  section.panel.active{display:block;animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .card h2{
+    font-size:.85rem;
+    margin:0 0 12px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .accent-electric{color:var(--elec);}
+  .accent-gas{color:var(--gas);}
+  .accent-water{color:var(--water);}
+  .accent-summary{color:var(--sum);}
+
+  .field-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:10px 12px;
+  }
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field.full{grid-column:1/-1;}
+  .field label{font-size:.68rem;color:var(--ink-soft);font-weight:600;letter-spacing:.02em;}
+  .field input{
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 10px;
+    font-size:.92rem;
+    background:#FCFBF8;
+    color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+  .field input:focus{outline:2px solid var(--focus,#20303D);outline-offset:1px;}
+  .btn-row{display:flex;gap:8px;margin-top:14px;}
+  button.primary{
+    flex:1;
+    border:none;
+    border-radius:7px;
+    padding:11px 14px;
+    font-weight:700;
+    font-size:.85rem;
+    color:#fff;
+    cursor:pointer;
+  }
+  #electric .btn-row button.primary{background:var(--elec);}
+  #gas .btn-row button.primary{background:var(--gas);}
+  #water .btn-row button.primary{background:var(--water);}
+  button.ghost{
+    border:1px solid var(--line);
+    background:transparent;
+    border-radius:7px;
+    padding:11px 14px;
+    font-size:.85rem;
+    font-weight:600;
+    color:var(--ink-soft);
+    cursor:pointer;
+  }
+
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);}
+  table{border-collapse:collapse;width:100%;font-size:.78rem;min-width:640px;}
+  thead th{
+    background:#F7F5F0;
+    color:var(--ink-soft);
+    font-weight:700;
+    padding:8px 8px;
+    border-bottom:1px solid var(--line);
+    text-align:right;
+    white-space:nowrap;
+  }
+  thead th:first-child, tbody td:first-child{text-align:left;}
+  tbody td{
+    padding:8px 8px;
+    border-bottom:1px solid #EEEBE2;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+  }
+  tbody tr:hover{background:#FAF9F5;}
+  tbody td.actions{text-align:center;}
+  tbody td.actions button{
+    border:none;background:transparent;cursor:pointer;
+    color:var(--ink-soft);font-size:.72rem;padding:3px 5px;
+  }
+  tbody td.actions button.del{color:var(--danger);}
+  td.muted{color:#B7B0A0;}
+  .subhead{font-size:.68rem;color:var(--ink-soft);margin:2px 0 10px;}
+
+  .summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+  .stat{
+    background:var(--sum-bg);
+    border-radius:var(--radius);
+    padding:12px 14px;
+  }
+  .stat .label{font-size:.68rem;color:var(--ink-soft);font-weight:600;}
+  .stat .value{font-size:1.25rem;font-weight:700;color:var(--sum);font-variant-numeric:tabular-nums;margin-top:2px;}
+
+  .empty{padding:26px 10px;text-align:center;color:var(--ink-soft);font-size:.8rem;}
+
+  footer{max-width:720px;margin:20px auto 0;padding:0 14px;color:var(--ink-soft);font-size:.68rem;line-height:1.6;}
+  .toast{
+    position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;
+    font-size:.78rem;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;
+    z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
+    水道光熱費メーター管理
+    <span class="version-badge">v1.0.0</span>
+  </h1>
+  <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
+</header>
+
+<nav class="tabs">
+  <button data-tab="electric" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>電気
+  </button>
+  <button data-tab="gas">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c1 3-3 4-3 8a3 3 0 0 0 6 0c0-1-.5-2-1-2 1 3-2 3-2 5"/></svg>ガス
+  </button>
+  <button data-tab="water">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>水道
+  </button>
+  <button data-tab="summary">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="12" width="4" height="8"/><rect x="10" y="7" width="4" height="13"/><rect x="16" y="3" width="4" height="17"/></svg>56A合計金額
+  </button>
+  <button data-tab="settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M3 12h3M18 12h3M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/></svg>設定
+  </button>
+</nav>
+
+<main>
+
+  <!-- 電気 -->
+  <section class="panel active" id="electric">
+    <div class="card">
+      <h2 class="accent-electric">電気メータ入力</h2>
+      <div class="subhead">検針月ごとに 56B メータ・合計メータ・当月料金合計 を入力してください（56A メータは自動計算されます）</div>
+      <div class="field-grid">
+        <div class="field"><label for="e-month">計測月</label><input type="month" id="e-month"></div>
+        <div class="field"><label for="e-b">電気メータ 56B [kWh]</label><input type="number" step="0.1" id="e-b" placeholder="例: 630.7"></div>
+        <div class="field"><label for="e-total">電気メータ合計 [kWh]</label><input type="number" step="0.1" id="e-total" placeholder="例: 1564.9"></div>
+        <div class="field"><label for="e-cost">料金合計 [円]</label><input type="number" step="1" id="e-cost" placeholder="例: 36702"></div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="e-save">この月を保存</button>
+        <button class="ghost" id="e-cancel" style="display:none;">編集をやめる</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>計測月</th><th>56A[kWh]</th><th>56B[kWh]</th><th>合計[kWh]</th>
+          <th>使用56A</th><th>使用56B</th><th>使用合計</th>
+          <th>料金56A</th><th>料金56B</th><th>料金合計</th><th></th>
+        </tr></thead>
+        <tbody id="e-body"></tbody>
+      </table>
+      <div class="empty" id="e-empty" style="display:none;">まだデータがありません。上のフォームから登録してください。</div>
+    </div>
+  </section>
+
+  <!-- ガス -->
+  <section class="panel" id="gas">
+    <div class="card">
+      <h2 class="accent-gas">ガス使用量入力</h2>
+      <div class="subhead">ガスは専用メータで 56A/56B を分けて計測していないため、同じ月の電気使用量比で按分します</div>
+      <div class="field-grid">
+        <div class="field"><label for="g-month">計測月</label><input type="month" id="g-month"></div>
+        <div class="field"><label for="g-usage">使用量合計 [m3]</label><input type="number" step="0.1" id="g-usage" placeholder="例: 83"></div>
+        <div class="field full"><label for="g-cost">料金合計 [円]</label><input type="number" step="1" id="g-cost" placeholder="例: 11797"></div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="g-save">この月を保存</button>
+        <button class="ghost" id="g-cancel" style="display:none;">編集をやめる</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>計測月</th><th>使用量合計[m3]</th><th>料金56A</th><th>料金56B</th><th>料金合計</th><th></th>
+        </tr></thead>
+        <tbody id="g-body"></tbody>
+      </table>
+      <div class="empty" id="g-empty" style="display:none;">まだデータがありません。上のフォームから登録してください。</div>
+    </div>
+  </section>
+
+  <!-- 水道 -->
+  <section class="panel" id="water">
+    <div class="card">
+      <h2 class="accent-water">水道メータ入力</h2>
+      <div class="subhead">水道の検針・請求は奇数月(1・3・5・7・9・11月)のみです。前回検針からの使用量・料金は対象月数で割り、間の各月に均等按分して集計します</div>
+      <div class="field-grid">
+        <div class="field"><label for="w-month">検針月(奇数月のみ)</label><input type="month" id="w-month"><span class="field-note">1・3・5・7・9・11月のいずれかを選択してください</span></div>
+        <div class="field"><label for="w-b">水道メータ 56B [m3]</label><input type="number" step="0.1" id="w-b" placeholder="例: 119.5"></div>
+        <div class="field"><label for="w-total">水道メータ合計 [m3]</label><input type="number" step="0.1" id="w-total" placeholder="例: 280"></div>
+        <div class="field"><label for="w-cost">料金合計 [円]</label><input type="number" step="1" id="w-cost" placeholder="例: 15156"></div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="w-save">この月を保存</button>
+        <button class="ghost" id="w-cancel" style="display:none;">編集をやめる</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>検針月</th><th>56A[m3]</th><th>56B[m3]</th><th>合計[m3]</th>
+          <th>対象月数</th>
+          <th>月あたり使用56A</th><th>月あたり使用56B</th><th>月あたり使用合計</th>
+          <th>月あたり料金56A</th><th>月あたり料金56B</th><th>料金合計(検針分)</th><th></th>
+        </tr></thead>
+        <tbody id="w-body"></tbody>
+      </table>
+      <div class="empty" id="w-empty" style="display:none;">まだデータがありません。上のフォームから登録してください。</div>
+    </div>
+  </section>
+
+  <!-- 集計 -->
+  <section class="panel" id="summary">
+    <div class="card">
+      <h2 class="accent-summary">56A合計金額</h2>
+      <div class="subhead">各月の電気・ガス・水道について 56A 負担分の料金を合算した表です(水道は隔月検針分を対象月に均等按分しています)</div>
+      <div class="summary-grid">
+        <div class="stat"><div class="label">直近月の56A合計</div><div class="value" id="s-latest">−</div></div>
+        <div class="stat"><div class="label">全期間の56A合計</div><div class="value" id="s-total">−</div></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>計測月</th><th>電気(56A)</th><th>ガス(56A)</th><th>水道(56A)</th><th>合計(56A)</th>
+        </tr></thead>
+        <tbody id="s-body"></tbody>
+      </table>
+      <div class="empty" id="s-empty" style="display:none;">電気・ガス・水道のデータを入力すると、ここに自動集計されます。</div>
+    </div>
+  </section>
+
+  <!-- 設定 -->
+  <section class="panel" id="settings">
+    <div class="card">
+      <h2 class="accent-sync">Googleスプレッドシート連携</h2>
+      <div class="subhead">Apps Script の Web App URL を登録すると、入力データをこの端末だけでなくGoogleスプレッドシートにも保存します(設定しない場合はこの端末内だけに保存されます)</div>
+      <div class="field-grid">
+        <div class="field full">
+          <label for="gs-url">Web App URL</label>
+          <input type="url" id="gs-url" placeholder="https://script.google.com/macros/s/.../exec">
+          <span class="field-note">Apps Script のデプロイ手順は別途お渡しした案内をご参照ください</span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="gs-save" style="background:var(--sync);">URLを保存</button>
+        <button class="ghost" id="gs-sync-now">今すぐ同期</button>
+      </div>
+      <div class="sync-status" id="gs-status"><span class="sync-dot"></span><span id="gs-status-text">未設定(この端末内にのみ保存されています)</span></div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  データはこの端末のブラウザ内（localStorage）に保存されるほか、「設定」タブでGoogleスプレッドシートのWeb App URLを登録すると、そのスプレッドシートにも自動保存されます。<br>
+  計算方法：電気・水道は「合計メータ − 56Bメータ = 56Aメータ」を求め、検針差分（使用量）の比率で当月料金を按分します。ガスは専用メータが無いため、同月の電気使用量比で按分します。水道は奇数月(1・3・5・7・9・11月)のみ検針し、隔月分の使用量・料金を対象期間の各月に均等按分して連月で集計します。
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "suido_kounetsu_v1";
+  var CONFIG_KEY = "suido_kounetsu_gsheet_url_v1";
+  var state = { electric: [], gas: [], water: [] };
+  var editing = { electric: null, gas: null, water: null };
+  var gsheetUrl = "";
+
+  // Service Worker Registration for PWA
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./sw.js')
+        .then(function(reg) { console.log('Service Worker registered:', reg.scope); })
+        .catch(function(err) { console.error('Service Worker registration failed:', err); });
+    });
+  }
+
+  // ---------- storage ----------
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){ state = JSON.parse(raw); }
+    }catch(e){ /* storage unavailable: continue with in-memory state */ }
+  }
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){ /* storage unavailable in this context; data stays in-memory for this session */ }
+  }
+
+  function loadConfig(){
+    try{ gsheetUrl = localStorage.getItem(CONFIG_KEY) || ""; }catch(e){ gsheetUrl = ""; }
+  }
+  function saveConfig(url){
+    gsheetUrl = url;
+    try{ localStorage.setItem(CONFIG_KEY, url); }catch(e){ /* ignore */ }
+  }
+
+  function setSyncStatus(text, kind){
+    var el = document.getElementById("gs-status");
+    var txt = document.getElementById("gs-status-text");
+    if(!el) return;
+    el.classList.remove("ok","err");
+    if(kind) el.classList.add(kind);
+    txt.textContent = text;
+  }
+  function nowStr(){
+    var d = new Date();
+    return d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+  function normNum(v){ var n = Number(v); return isNaN(n) ? null : n; }
+  function normalizeMonth(m){
+    if(m instanceof Date) return m.getFullYear()+"-"+String(m.getMonth()+1).padStart(2,"0");
+    var s = String(m);
+    var match = s.match(/(\d{4})-(\d{1,2})/);
+    return match ? match[1]+"-"+match[2].padStart(2,"0") : s;
+  }
+
+  function syncPull(){
+    if(!gsheetUrl) { setSyncStatus("未設定（この端末内にのみ保存されています）"); return Promise.resolve(); }
+    setSyncStatus("同期中…");
+    return fetch(gsheetUrl, { method:"GET" })
+      .then(function(res){ return res.json(); })
+      .then(function(json){
+        if(!json || !json.ok) throw new Error("bad response");
+        state.electric = (json.data.electric||[]).map(function(r){ return {
+          month: normalizeMonth(r.month), meter56B: normNum(r.meter56B), meterTotal: normNum(r.meterTotal), costTotal: normNum(r.costTotal)
+        }; }).filter(function(r){ return r.month && r.meter56B !== null && r.meterTotal !== null && r.costTotal !== null; });
+        state.gas = (json.data.gas||[]).map(function(r){ return {
+          month: normalizeMonth(r.month), usageTotal: normNum(r.usageTotal), costTotal: normNum(r.costTotal)
+        }; }).filter(function(r){ return r.month && r.usageTotal !== null && r.costTotal !== null; });
+        state.water = (json.data.water||[]).map(function(r){ return {
+          month: normalizeMonth(r.month), meter56B: normNum(r.meter56B), meterTotal: normNum(r.meterTotal), costTotal: normNum(r.costTotal)
+        }; }).filter(function(r){ return r.month && r.meter56B !== null && r.meterTotal !== null && r.costTotal !== null; });
+        save();
+        renderAll();
+        setSyncStatus("スプレッドシートと同期済み " + nowStr(), "ok");
+      })
+      .catch(function(){
+        setSyncStatus("スプレッドシートに接続できません（端末内のデータを表示中）", "err");
+      });
+  }
+
+  function syncPush(){
+    if(!gsheetUrl) return Promise.resolve();
+    setSyncStatus("保存中…");
+    return fetch(gsheetUrl, {
+      method:"POST",
+      headers:{ "Content-Type":"text/plain;charset=utf-8" },
+      body: JSON.stringify({ electric: state.electric, gas: state.gas, water: state.water })
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(json){
+        if(!json || !json.ok) throw new Error("bad response");
+        setSyncStatus("スプレッドシートに保存済み " + nowStr(), "ok");
+      })
+      .catch(function(){
+        setSyncStatus("スプレッドシートへの保存に失敗しました（端末内には保存済み）", "err");
+      });
+  }
+
+  function toast(msg){
+    var t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._h);
+    toast._h = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+  }
+
+  // ---------- helpers ----------
+  function fmtNum(n, digits){
+    if(n === null || n === undefined || isNaN(n)) return null;
+    return Number(n).toLocaleString("ja-JP", {maximumFractionDigits: digits === undefined ? 1 : digits, minimumFractionDigits:0});
+  }
+  function fmtYen(n){
+    if(n === null || n === undefined || isNaN(n)) return null;
+    return "¥" + Math.round(n).toLocaleString("ja-JP");
+  }
+  function monthLabel(m){
+    var parts = m.split("-");
+    return parts[0] + "年" + parseInt(parts[1],10) + "月";
+  }
+  function sortByMonth(arr){
+    arr.sort(function(a,b){ return a.month < b.month ? -1 : a.month > b.month ? 1 : 0; });
+  }
+  function monthToIndex(m){
+    var p = m.split("-");
+    return parseInt(p[0],10) * 12 + (parseInt(p[1],10) - 1);
+  }
+  function indexToMonth(idx){
+    var y = Math.floor(idx / 12);
+    var mo = (idx % 12) + 1;
+    return y + "-" + String(mo).padStart(2,"0");
+  }
+  function monthDiff(m1, m2){
+    return monthToIndex(m2) - monthToIndex(m1);
+  }
+  function addMonths(m, n){
+    return indexToMonth(monthToIndex(m) + n);
+  }
+
+  // ---------- electric ----------
+  function computeElectric(){
+    var rows = state.electric.slice();
+    sortByMonth(rows);
+    for(var i=0;i<rows.length;i++){
+      var r = rows[i];
+      r.meter56A = r.meterTotal - r.meter56B;
+    }
+    for(i=0;i<rows.length;i++){
+      var cur = rows[i], next = rows[i+1];
+      if(!next){
+        cur.usage56A = null; cur.usage56B = null; cur.usageTotal = null;
+        cur.cost56A = null; cur.cost56B = null;
+        continue;
+      }
+      var u56A = next.meter56A - cur.meter56A; if(u56A < 0) u56A = 0;
+      var u56B = next.meter56B - cur.meter56B; if(u56B < 0) u56B = 0;
+      var uT   = next.meterTotal - cur.meterTotal; if(uT < 0) uT = 0;
+      cur.usage56A = u56A; cur.usage56B = u56B; cur.usageTotal = uT;
+      cur.cost56A = (u56A === 0) ? 0 : cur.costTotal * u56A / uT;
+      cur.cost56B = (u56B === 0) ? 0 : cur.costTotal * u56B / uT;
+    }
+    return rows;
+  }
+
+  function renderElectric(){
+    var rows = computeElectric();
+    var body = document.getElementById("e-body");
+    body.innerHTML = "";
+    document.getElementById("e-empty").style.display = rows.length ? "none" : "block";
+    rows.forEach(function(r){
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>"+monthLabel(r.month)+"</td>"+
+        "<td>"+fmtNum(r.meter56A)+"</td>"+
+        "<td>"+fmtNum(r.meter56B)+"</td>"+
+        "<td>"+fmtNum(r.meterTotal)+"</td>"+
+        tdMaybe(r.usage56A)+ tdMaybe(r.usage56B)+ tdMaybe(r.usageTotal)+
+        tdMaybeYen(r.cost56A)+ tdMaybeYen(r.cost56B)+
+        "<td>"+fmtYen(r.costTotal)+"</td>"+
+        "<td class=\"actions\"></td>";
+      var actTd = tr.querySelector(".actions");
+      actTd.appendChild(makeEditBtn("electric", r.month));
+      actTd.appendChild(makeDelBtn("electric", r.month));
+      body.appendChild(tr);
+    });
+  }
+
+  // ---------- gas ----------
+  function computeGas(elecRows){
+    var elecByMonth = {};
+    elecRows.forEach(function(r){ elecByMonth[r.month] = r; });
+    var rows = state.gas.slice();
+    sortByMonth(rows);
+    rows.forEach(function(r){
+      var e = elecByMonth[r.month];
+      if(e && e.usageTotal !== null && e.usageTotal !== undefined && e.usageTotal > 0){
+        r.cost56A = r.costTotal * e.usage56A / e.usageTotal;
+        r.cost56B = r.costTotal * e.usage56B / e.usageTotal;
+      } else {
+        r.cost56A = null; r.cost56B = null;
+      }
+    });
+    return rows;
+  }
+
+  function renderGas(elecRows){
+    var rows = computeGas(elecRows);
+    var body = document.getElementById("g-body");
+    body.innerHTML = "";
+    document.getElementById("g-empty").style.display = rows.length ? "none" : "block";
+    rows.forEach(function(r){
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>"+monthLabel(r.month)+"</td>"+
+        "<td>"+fmtNum(r.usageTotal)+"</td>"+
+        tdMaybeYen(r.cost56A)+ tdMaybeYen(r.cost56B)+
+        "<td>"+fmtYen(r.costTotal)+"</td>"+
+        "<td class=\"actions\"></td>";
+      var actTd = tr.querySelector(".actions");
+      actTd.appendChild(makeEditBtn("gas", r.month));
+      actTd.appendChild(makeDelBtn("gas", r.month));
+      body.appendChild(tr);
+    });
+    return rows;
+  }
+
+  // ---------- water ----------
+  function isOddMonth(m){
+    var mm = parseInt(m.split("-")[1], 10);
+    return mm % 2 === 1;
+  }
+
+  function computeWater(){
+    var rows = state.water.filter(function(r){ return isOddMonth(r.month); });
+    sortByMonth(rows);
+    for(var i=0;i<rows.length;i++){
+      rows[i].meter56A = rows[i].meterTotal - rows[i].meter56B;
+    }
+    for(i=0;i<rows.length;i++){
+      var cur = rows[i], prev = rows[i-1];
+      if(!prev){
+        cur.usage56A = null; cur.usage56B = null; cur.usageTotal = null;
+        cur.cost56A = null; cur.cost56B = null;
+        cur.monthsSpan = null; cur.coveredMonths = [];
+        cur.perMonthUsage56A = null; cur.perMonthUsage56B = null; cur.perMonthUsageTotal = null;
+        cur.perMonthCost56A = null; cur.perMonthCost56B = null;
+        continue;
+      }
+      var u56A = cur.meter56A - prev.meter56A; if(u56A < 0) u56A = 0;
+      var u56B = cur.meter56B - prev.meter56B; if(u56B < 0) u56B = 0;
+      var uT   = cur.meterTotal - prev.meterTotal; if(uT < 0) uT = 0;
+      var span = monthDiff(prev.month, cur.month); if(span < 1) span = 1;
+      cur.usage56A = u56A; cur.usage56B = u56B; cur.usageTotal = uT;
+      cur.cost56A = (uT === 0) ? 0 : cur.costTotal * u56A / uT;
+      cur.cost56B = (uT === 0) ? 0 : cur.costTotal * u56B / uT;
+      cur.monthsSpan = span;
+      cur.perMonthUsage56A = u56A / span;
+      cur.perMonthUsage56B = u56B / span;
+      cur.perMonthUsageTotal = uT / span;
+      cur.perMonthCost56A = cur.cost56A / span;
+      cur.perMonthCost56B = cur.cost56B / span;
+      var covered = [];
+      for(var k=1;k<=span;k++){ covered.push(addMonths(prev.month, k)); }
+      cur.coveredMonths = covered;
+    }
+    return rows;
+  }
+
+  function buildWaterMonthlyMap(waterRows){
+    var map = {};
+    waterRows.forEach(function(r){
+      if(!r.coveredMonths || !r.coveredMonths.length) return;
+      r.coveredMonths.forEach(function(m){
+        map[m] = {
+          cost56A: r.perMonthCost56A, cost56B: r.perMonthCost56B,
+          usage56A: r.perMonthUsage56A, usage56B: r.perMonthUsage56B, usageTotal: r.perMonthUsageTotal,
+          sourceMonth: r.month, monthsSpan: r.monthsSpan
+        };
+      });
+    });
+    return map;
+  }
+
+  function renderWater(){
+    var rows = computeWater();
+    var body = document.getElementById("w-body");
+    body.innerHTML = "";
+    document.getElementById("w-empty").style.display = rows.length ? "none" : "block";
+    rows.forEach(function(r){
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>"+monthLabel(r.month)+"</td>"+
+        "<td>"+fmtNum(r.meter56A)+"</td>"+
+        "<td>"+fmtNum(r.meter56B)+"</td>"+
+        "<td>"+fmtNum(r.meterTotal)+"</td>"+
+        tdMaybe(r.monthsSpan, 0)+
+        tdMaybe(r.perMonthUsage56A)+ tdMaybe(r.perMonthUsage56B)+ tdMaybe(r.perMonthUsageTotal)+
+        tdMaybeYen(r.perMonthCost56A)+ tdMaybeYen(r.perMonthCost56B)+
+        "<td>"+fmtYen(r.costTotal)+"</td>"+
+        "<td class=\"actions\"></td>";
+      var actTd = tr.querySelector(".actions");
+      actTd.appendChild(makeEditBtn("water", r.month));
+      actTd.appendChild(makeDelBtn("water", r.month));
+      body.appendChild(tr);
+    });
+    return rows;
+  }
+
+  // ---------- summary ----------
+  function renderSummary(elecRows, gasRows, waterMonthlyMap){
+    var byMonth = {};
+    function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, e:0, g:0, w:0, hasE:false, hasG:false, hasW:false}; return byMonth[m]; }
+    elecRows.forEach(function(r){ if(r.cost56A !== null){ var b = ensure(r.month); b.e = r.cost56A; b.hasE = true; } });
+    gasRows.forEach(function(r){ if(r.cost56A !== null){ var b = ensure(r.month); b.g = r.cost56A; b.hasG = true; } });
+    Object.keys(waterMonthlyMap).forEach(function(m){
+      var w = waterMonthlyMap[m];
+      var b = ensure(m); b.w = w.cost56A; b.hasW = true;
+    });
+
+    var months = Object.keys(byMonth).sort();
+    var body = document.getElementById("s-body");
+    body.innerHTML = "";
+    document.getElementById("s-empty").style.display = months.length ? "none" : "block";
+
+    var grandTotal = 0, latest = null;
+    months.forEach(function(m){
+      var b = byMonth[m];
+      var total = b.e + b.g + b.w;
+      grandTotal += total;
+      latest = total;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>"+monthLabel(m)+"</td>"+
+        "<td>"+(b.hasE ? fmtYen(b.e) : "<span class=\"muted\">−</span>")+"</td>"+
+        "<td>"+(b.hasG ? fmtYen(b.g) : "<span class=\"muted\">−</span>")+"</td>"+
+        "<td>"+(b.hasW ? fmtYen(b.w) : "<span class=\"muted\">−</span>")+"</td>"+
+        "<td><strong>"+fmtYen(total)+"</strong></td>";
+      body.appendChild(tr);
+    });
+
+    document.getElementById("s-latest").textContent = latest === null ? "−" : fmtYen(latest);
+    document.getElementById("s-total").textContent = months.length ? fmtYen(grandTotal) : "−";
+  }
+
+  function tdMaybe(v, digits){
+    var s = fmtNum(v, digits);
+    return s === null ? "<td class=\"muted\">−</td>" : "<td>"+s+"</td>";
+  }
+  function tdMaybeYen(v){
+    var s = fmtYen(v);
+    return s === null ? "<td class=\"muted\">−</td>" : "<td>"+s+"</td>";
+  }
+
+  function makeEditBtn(kind, month){
+    var btn = document.createElement("button");
+    btn.textContent = "編集";
+    btn.addEventListener("click", function(){ startEdit(kind, month); });
+    return btn;
+  }
+  function makeDelBtn(kind, month){
+    var btn = document.createElement("button");
+    btn.textContent = "削除";
+    btn.className = "del";
+    btn.addEventListener("click", function(){ removeEntry(kind, month); });
+    return btn;
+  }
+
+  function removeEntry(kind, month){
+    if(!confirm(monthLabel(month) + " のデータを削除しますか？")) return;
+    state[kind] = state[kind].filter(function(r){ return r.month !== month; });
+    save();
+    renderAll();
+    syncPush();
+    toast("削除しました");
+  }
+
+  function startEdit(kind, month){
+    var row = state[kind].find(function(r){ return r.month === month; });
+    if(!row) return;
+    editing[kind] = month;
+    if(kind === "electric"){
+      document.getElementById("e-month").value = row.month;
+      document.getElementById("e-b").value = row.meter56B;
+      document.getElementById("e-total").value = row.meterTotal;
+      document.getElementById("e-cost").value = row.costTotal;
+      document.getElementById("e-cancel").style.display = "inline-block";
+      document.getElementById("e-month").focus();
+    } else if(kind === "gas"){
+      document.getElementById("g-month").value = row.month;
+      document.getElementById("g-usage").value = row.usageTotal;
+      document.getElementById("g-cost").value = row.costTotal;
+      document.getElementById("g-cancel").style.display = "inline-block";
+      document.getElementById("g-month").focus();
+    } else {
+      document.getElementById("w-month").value = row.month;
+      document.getElementById("w-b").value = row.meter56B;
+      document.getElementById("w-total").value = row.meterTotal;
+      document.getElementById("w-cost").value = row.costTotal;
+      document.getElementById("w-cancel").style.display = "inline-block";
+      document.getElementById("w-month").focus();
+    }
+    document.querySelector("nav.tabs button[data-tab=\""+kind+"\"]").click();
+  }
+
+  function cancelEdit(kind){
+    editing[kind] = null;
+    if(kind === "electric"){
+      document.getElementById("e-month").value = "";
+      document.getElementById("e-b").value = "";
+      document.getElementById("e-total").value = "";
+      document.getElementById("e-cost").value = "";
+      document.getElementById("e-cancel").style.display = "none";
+    } else if(kind === "gas"){
+      document.getElementById("g-month").value = "";
+      document.getElementById("g-usage").value = "";
+      document.getElementById("g-cost").value = "";
+      document.getElementById("g-cancel").style.display = "none";
+    } else {
+      document.getElementById("w-month").value = "";
+      document.getElementById("w-b").value = "";
+      document.getElementById("w-total").value = "";
+      document.getElementById("w-cost").value = "";
+      document.getElementById("w-cancel").style.display = "none";
+    }
+  }
+
+  function upsert(kind, entry){
+    var idx = state[kind].findIndex(function(r){ return r.month === entry.month; });
+    if(idx >= 0) state[kind][idx] = entry; else state[kind].push(entry);
+  }
+
+  // ---------- form handlers ----------
+  document.getElementById("e-save").addEventListener("click", function(){
+    var month = document.getElementById("e-month").value;
+    var b = parseFloat(document.getElementById("e-b").value);
+    var total = parseFloat(document.getElementById("e-total").value);
+    var cost = parseFloat(document.getElementById("e-cost").value);
+    if(!month || isNaN(b) || isNaN(total) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    if(editing.electric && editing.electric !== month){
+      state.electric = state.electric.filter(function(r){ return r.month !== editing.electric; });
+    }
+    upsert("electric", {month:month, meter56B:b, meterTotal:total, costTotal:cost});
+    save();
+    cancelEdit("electric");
+    renderAll();
+    syncPush();
+    toast(monthLabel(month) + " の電気データを保存しました");
+  });
+  document.getElementById("e-cancel").addEventListener("click", function(){ cancelEdit("electric"); });
+
+  document.getElementById("g-save").addEventListener("click", function(){
+    var month = document.getElementById("g-month").value;
+    var usage = parseFloat(document.getElementById("g-usage").value);
+    var cost = parseFloat(document.getElementById("g-cost").value);
+    if(!month || isNaN(usage) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    if(editing.gas && editing.gas !== month){
+      state.gas = state.gas.filter(function(r){ return r.month !== editing.gas; });
+    }
+    upsert("gas", {month:month, usageTotal:usage, costTotal:cost});
+    save();
+    cancelEdit("gas");
+    renderAll();
+    syncPush();
+    toast(monthLabel(month) + " のガスデータを保存しました");
+  });
+  document.getElementById("g-cancel").addEventListener("click", function(){ cancelEdit("gas"); });
+
+  document.getElementById("w-save").addEventListener("click", function(){
+    var month = document.getElementById("w-month").value;
+    var b = parseFloat(document.getElementById("w-b").value);
+    var total = parseFloat(document.getElementById("w-total").value);
+    var cost = parseFloat(document.getElementById("w-cost").value);
+    if(!month || isNaN(b) || isNaN(total) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    if(!isOddMonth(month)){ toast("水道は奇数月(1・3・5・7・9・11月)のみ入力できます"); return; }
+    if(editing.water && editing.water !== month){
+      state.water = state.water.filter(function(r){ return r.month !== editing.water; });
+    }
+    upsert("water", {month:month, meter56B:b, meterTotal:total, costTotal:cost});
+    save();
+    cancelEdit("water");
+    renderAll();
+    syncPush();
+    toast(monthLabel(month) + " の水道データを保存しました");
+  });
+  document.getElementById("w-cancel").addEventListener("click", function(){ cancelEdit("water"); });
+
+  document.getElementById("gs-save").addEventListener("click", function(){
+    var url = document.getElementById("gs-url").value.trim();
+    saveConfig(url);
+    if(url){
+      toast("URLを保存しました。同期します…");
+      syncPull();
+    } else {
+      setSyncStatus("未設定（この端末内にのみ保存されています）");
+      toast("URLを削除しました");
+    }
+  });
+  document.getElementById("gs-sync-now").addEventListener("click", function(){
+    if(!gsheetUrl){ toast("先にWeb App URLを保存してください"); return; }
+    syncPull();
+  });
+
+  // ---------- tabs ----------
+  document.querySelectorAll("nav.tabs button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      document.querySelectorAll("nav.tabs button").forEach(function(b){ b.classList.remove("active"); });
+      document.querySelectorAll("section.panel").forEach(function(p){ p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById(btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  function renderAll(){
+    var elecRows = computeElectric();
+    renderElectric();
+    var gasRows = renderGas(elecRows);
+    var waterRows = renderWater();
+    var waterMonthlyMap = buildWaterMonthlyMap(waterRows);
+    renderSummary(elecRows, gasRows, waterMonthlyMap);
+  }
+
+  load();
+  loadConfig();
+  document.getElementById("gs-url").value = gsheetUrl;
+  renderAll();
+  if(gsheetUrl){ syncPull(); } else { setSyncStatus("未設定（この端末内にのみ保存されています）"); }
+})();
+</script>
+</body>
+</html>

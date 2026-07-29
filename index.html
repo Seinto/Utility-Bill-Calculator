@@ -233,6 +233,70 @@
     z-index:50;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  /* インフォメーションボタン & モーダル関連 */
+  .info-btn {
+    border: none;
+    background: transparent;
+    color: var(--sync);
+    cursor: pointer;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 50%;
+  }
+  .info-btn:hover { background: var(--sync-bg); }
+  .info-btn svg { width: 18px; height: 18px; }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(32, 48, 61, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--card);
+    border-radius: var(--radius);
+    max-width: 600px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  }
+  .modal-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-header h3 { margin: 0; font-size: .95rem; color: var(--ink); }
+  .modal-close {
+    border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--ink-soft);
+  }
+  .modal-body {
+    padding: 16px;
+    overflow-y: auto;
+    font-size: .78rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+  .modal-body ol { padding-left: 20px; margin: 8px 0; }
+  .modal-body li { margin-bottom: 8px; }
+  .modal-body pre {
+    background: #F7F5F0;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    overflow-x: auto;
+    font-size: .72rem;
+  }
 </style>
 </head>
 <body>
@@ -241,7 +305,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.0</span>
+    <span class="version-badge">v1.0.1</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
 </header>
@@ -378,13 +442,18 @@
   <!-- 設定 -->
   <section class="panel" id="settings">
     <div class="card">
-      <h2 class="accent-sync">Googleスプレッドシート連携</h2>
+      <h2 class="accent-sync">
+        Googleスプレッドシート連携
+        <button type="button" class="info-btn" id="gs-info-btn" title="設定手順を表示">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+      </h2>
       <div class="subhead">Apps Script の Web App URL を登録すると、入力データをこの端末だけでなくGoogleスプレッドシートにも保存します(設定しない場合はこの端末内だけに保存されます)</div>
       <div class="field-grid">
         <div class="field full">
           <label for="gs-url">Web App URL</label>
           <input type="url" id="gs-url" placeholder="https://script.google.com/macros/s/.../exec">
-          <span class="field-note">Apps Script のデプロイ手順は別途お渡しした案内をご参照ください</span>
+          <span class="field-note">詳しい連携手順は右上の (ℹ️) ボタンをクリックしてください</span>
         </div>
       </div>
       <div class="btn-row">
@@ -396,6 +465,69 @@
   </section>
 
 </main>
+
+<!-- インフォメーションモーダル -->
+<div class="modal-overlay" id="info-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Googleスプレッドシート連携の手順</h3>
+      <button class="modal-close" id="modal-close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ol>
+        <li>Googleドライブで新しい「Googleスプレッドシート」を作成します。</li>
+        <li>メニューの <strong>[拡張機能] &gt; [Apps Script]</strong> を開きます。</li>
+        <li>表示されたエディタの内容を全て消去し、以下のスクリプトを貼り付けて保存します：
+<pre><code>function doGet() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet();
+  var data = {};
+  ['electric', 'gas', 'water'].forEach(function(name) {
+    var s = sheet.getSheetByName(name);
+    if (!s) { data[name] = []; return; }
+    var vals = s.getDataRange().getValues();
+    if (vals.length &lt;= 1) { data[name] = []; return; }
+    var head = vals[0];
+    data[name] = vals.slice(1).map(function(row) {
+      var obj = {};
+      head.forEach(function(h, i) { obj[h] = row[i]; });
+      return obj;
+    });
+  });
+  return ContentService.createTextOutput(JSON.stringify({ok:true, data:data}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var param = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet();
+  ['electric', 'gas', 'water'].forEach(function(name) {
+    var s = sheet.getSheetByName(name) || sheet.insertSheet(name);
+    s.clear();
+    var list = param[name] || [];
+    if (list.length === 0) return;
+    var keys = Object.keys(list[0]);
+    s.appendRow(keys);
+    list.forEach(function(item) {
+      s.appendRow(keys.map(function(k) { return item[k]; }));
+    });
+  });
+  return ContentService.createTextOutput(JSON.stringify({ok:true}))
+    .setMimeType(ContentService.MimeType.JSON);
+}</code></pre>
+        </li>
+        <li>右上の <strong>[デプロイ] &gt; [新しいデプロイ]</strong> をクリックします。</li>
+        <li>種類の選択で <strong>[ウェブアプリ]</strong> を選択します。</li>
+        <li>設定を以下のように変更します：
+          <ul>
+            <li><strong>アクセスできるユーザー:</strong> 「全員 (Anyone)」</li>
+          </ul>
+        </li>
+        <li><strong>[デプロイ]</strong> を押し、発行された <strong>「ウェブアプリ URL」</strong> をコピーします。</li>
+        <li>アプリの「設定」タブ内の Web App URL 欄に貼り付けて「URLを保存」を押してください。</li>
+      </ol>
+    </div>
+  </div>
+</div>
 
 <footer>
   データはこの端末のブラウザ内（localStorage）に保存されるほか、「設定」タブでGoogleスプレッドシートのWeb App URLを登録すると、そのスプレッドシートにも自動保存されます。<br>
@@ -908,6 +1040,18 @@
   document.getElementById("gs-sync-now").addEventListener("click", function(){
     if(!gsheetUrl){ toast("先にWeb App URLを保存してください"); return; }
     syncPull();
+  });
+
+  // ---------- info modal ----------
+  var modalEl = document.getElementById("info-modal");
+  document.getElementById("gs-info-btn").addEventListener("click", function(){
+    modalEl.classList.add("active");
+  });
+  document.getElementById("modal-close-btn").addEventListener("click", function(){
+    modalEl.classList.remove("active");
+  });
+  modalEl.addEventListener("click", function(e){
+    if(e.target === modalEl) modalEl.classList.remove("active");
   });
 
   // ---------- tabs ----------

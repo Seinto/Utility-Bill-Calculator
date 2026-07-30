@@ -352,9 +352,9 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.4</span>
+    <span class="version-badge">v1.0.5</span>
   </h1>
-  <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
+  <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動計算します</p>
 </header>
 
 <nav class="tabs">
@@ -438,9 +438,9 @@
   <section class="panel" id="water">
     <div class="card">
       <h2 class="accent-water">水道メータ入力</h2>
-      <div class="subhead">水道の検針・請求は奇数月(1・3・5・7・9・11月)のみです。前回検針からの使用量・料金は対象月数で割り、間の各月に均等按分して集計します</div>
+      <div class="subhead">検針月ごとに 56B メータ・合計メータ・当月料金合計 を入力してください（56A メータは自動計算されます）</div>
       <div class="field-grid">
-        <div class="field"><label for="w-month">検針月(奇数月のみ)</label><input type="month" id="w-month"><span class="field-note">1・3・5・7・9・11月のいずれかを選択してください</span></div>
+        <div class="field"><label for="w-month">検針月</label><input type="month" id="w-month"></div>
         <div class="field"><label for="w-b">水道メータ 56B [m3]</label><input type="number" step="0.1" id="w-b" placeholder="例: 119.5"></div>
         <div class="field"><label for="w-total">水道メータ合計 [m3]</label><input type="number" step="0.1" id="w-total" placeholder="例: 280"></div>
         <div class="field"><label for="w-cost">料金合計 [円]</label><input type="number" step="1" id="w-cost" placeholder="例: 15156"></div>
@@ -455,9 +455,8 @@
       <table>
         <thead><tr>
           <th>検針月</th><th>56A[m3]</th><th>56B[m3]</th><th>合計[m3]</th>
-          <th>対象月数</th>
-          <th>月あたり使用56A</th><th>月あたり使用56B</th><th>月あたり使用合計</th>
-          <th>月あたり料金56A</th><th>月あたり料金56B</th><th>料金合計(検針分)</th><th></th>
+          <th>使用56A</th><th>使用56B</th><th>使用合計</th>
+          <th>料金56A</th><th>料金56B</th><th>料金合計</th><th></th>
         </tr></thead>
         <tbody id="w-body"></tbody>
       </table>
@@ -627,8 +626,7 @@ function doPost(e) {
 </div>
 
 <footer>
-  データはこの端末のブラウザ内（localStorage）に保存されるほか、「設定」タブでGoogleスプレッドシートのWeb App URLを登録すると、そのスプレッドシートにも自動保存されます。<br>
-  計算方法：電気・水道は「合計メータ − 56Bメータ = 56Aメータ」を求め、検針差分（使用量）の比率で当月料金を按分します。ガスは専用メータが無いため、同月の電気使用量比で按分します。水道は奇数月(1・3・5・7・9・11月)のみ検針し、隔月分の使用量・料金を対象期間の各月に均等按分して連月で集計します。
+  データはこの端末のブラウザ内（localStorage）に保存されるほか、「設定」タブでGoogleスプレッドシートのWeb App URLを登録すると、そのスプレッドシートにも自動保存されます。
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -780,9 +778,6 @@ function doPost(e) {
     var mo = (idx % 12) + 1;
     return y + "-" + String(mo).padStart(2,"0");
   }
-  function monthDiff(m1, m2){
-    return monthToIndex(m2) - monthToIndex(m1);
-  }
   function addMonths(m, n){
     return indexToMonth(monthToIndex(m) + n);
   }
@@ -874,61 +869,28 @@ function doPost(e) {
     return rows;
   }
 
-  // ---------- water ----------
-  function isOddMonth(m){
-    var mm = parseInt(m.split("-")[1], 10);
-    return mm % 2 === 1;
-  }
-
+  // ---------- water (按分なし直接集計) ----------
   function computeWater(){
-    var rows = state.water.filter(function(r){ return isOddMonth(r.month); });
+    var rows = state.water.slice();
     sortByMonth(rows);
     for(var i=0;i<rows.length;i++){
       rows[i].meter56A = rows[i].meterTotal - rows[i].meter56B;
     }
     for(i=0;i<rows.length;i++){
-      var cur = rows[i], prev = rows[i-1];
-      if(!prev){
+      var cur = rows[i], next = rows[i+1];
+      if(!next){
         cur.usage56A = null; cur.usage56B = null; cur.usageTotal = null;
         cur.cost56A = null; cur.cost56B = null;
-        cur.monthsSpan = null; cur.coveredMonths = [];
-        cur.perMonthUsage56A = null; cur.perMonthUsage56B = null; cur.perMonthUsageTotal = null;
-        cur.perMonthCost56A = null; cur.perMonthCost56B = null;
         continue;
       }
-      var u56A = cur.meter56A - prev.meter56A; if(u56A < 0) u56A = 0;
-      var u56B = cur.meter56B - prev.meter56B; if(u56B < 0) u56B = 0;
-      var uT   = cur.meterTotal - prev.meterTotal; if(uT < 0) uT = 0;
-      var span = monthDiff(prev.month, cur.month); if(span < 1) span = 1;
+      var u56A = next.meter56A - cur.meter56A; if(u56A < 0) u56A = 0;
+      var u56B = next.meter56B - cur.meter56B; if(u56B < 0) u56B = 0;
+      var uT   = next.meterTotal - cur.meterTotal; if(uT < 0) uT = 0;
       cur.usage56A = u56A; cur.usage56B = u56B; cur.usageTotal = uT;
       cur.cost56A = (uT === 0) ? 0 : cur.costTotal * u56A / uT;
       cur.cost56B = (uT === 0) ? 0 : cur.costTotal * u56B / uT;
-      cur.monthsSpan = span;
-      cur.perMonthUsage56A = u56A / span;
-      cur.perMonthUsage56B = u56B / span;
-      cur.perMonthUsageTotal = uT / span;
-      cur.perMonthCost56A = cur.cost56A / span;
-      cur.perMonthCost56B = cur.cost56B / span;
-      var covered = [];
-      for(var k=1;k<=span;k++){ covered.push(addMonths(prev.month, k)); }
-      cur.coveredMonths = covered;
     }
     return rows;
-  }
-
-  function buildWaterMonthlyMap(waterRows){
-    var map = {};
-    waterRows.forEach(function(r){
-      if(!r.coveredMonths || !r.coveredMonths.length) return;
-      r.coveredMonths.forEach(function(m){
-        map[m] = {
-          cost56A: r.perMonthCost56A, cost56B: r.perMonthCost56B,
-          usage56A: r.perMonthUsage56A, usage56B: r.perMonthUsage56B, usageTotal: r.perMonthUsageTotal,
-          sourceMonth: r.month, monthsSpan: r.monthsSpan
-        };
-      });
-    });
-    return map;
   }
 
   function renderWater(){
@@ -943,9 +905,8 @@ function doPost(e) {
         "<td>"+fmtNum(r.meter56A)+"</td>"+
         "<td>"+fmtNum(r.meter56B)+"</td>"+
         "<td>"+fmtNum(r.meterTotal)+"</td>"+
-        tdMaybe(r.monthsSpan, 0)+
-        tdMaybe(r.perMonthUsage56A)+ tdMaybe(r.perMonthUsage56B)+ tdMaybe(r.perMonthUsageTotal)+
-        tdMaybeYen(r.perMonthCost56A)+ tdMaybeYen(r.perMonthCost56B)+
+        tdMaybe(r.usage56A)+ tdMaybe(r.usage56B)+ tdMaybe(r.usageTotal)+
+        tdMaybeYen(r.cost56A)+ tdMaybeYen(r.cost56B)+
         "<td>"+fmtYen(r.costTotal)+"</td>"+
         "<td class=\"actions\"></td>";
       var actTd = tr.querySelector(".actions");
@@ -957,7 +918,7 @@ function doPost(e) {
   }
 
   // ---------- summary & graph ----------
-  function renderSummary(elecRows, gasRows, waterMonthlyMap){
+  function renderSummary(elecRows, gasRows, waterRows){
     var byMonth = {};
     function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:null, eB:null, gA:null, gB:null, wA:null, wB:null, hasData:false}; return byMonth[m]; }
     elecRows.forEach(function(r){
@@ -970,9 +931,10 @@ function doPost(e) {
         var b = ensure(r.month); b.gA = r.cost56A; b.gB = r.cost56B; b.hasData = true;
       }
     });
-    Object.keys(waterMonthlyMap).forEach(function(m){
-      var w = waterMonthlyMap[m];
-      var b = ensure(m); b.wA = w.cost56A; b.wB = w.cost56B; b.hasData = true;
+    waterRows.forEach(function(r){
+      if(r.cost56A !== null && r.cost56A !== undefined){
+        var b = ensure(r.month); b.wA = r.cost56A; b.wB = r.cost56B; b.hasData = true;
+      }
     });
 
     currentSummaryByMonth = byMonth;
@@ -1297,7 +1259,6 @@ function doPost(e) {
     var total = parseFloat(document.getElementById("w-total").value);
     var cost = parseFloat(document.getElementById("w-cost").value);
     if(!month || isNaN(b) || isNaN(total) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
-    if(!isOddMonth(month)){ toast("水道は奇数月(1・3・5・7・9・11月)のみ入力できます"); return; }
     if(editing.water && editing.water !== month){
       state.water = state.water.filter(function(r){ return r.month !== editing.water; });
     }
@@ -1353,8 +1314,7 @@ function doPost(e) {
     renderElectric();
     var gasRows = renderGas(elecRows);
     var waterRows = renderWater();
-    var waterMonthlyMap = buildWaterMonthlyMap(waterRows);
-    renderSummary(elecRows, gasRows, waterMonthlyMap);
+    renderSummary(elecRows, gasRows, waterRows);
   }
 
   load();

@@ -352,7 +352,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.6</span>
+    <span class="version-badge">v1.0.7</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動計算します</p>
 </header>
@@ -732,15 +732,22 @@ function doPost(e) {
     setSyncStatus("保存中…");
     return fetch(gsheetUrl, {
       method:"POST",
+      mode: "cors",         // CORS通信を明示
+      redirect: "follow",   // GASの302リダイレクトを追跡
       headers:{ "Content-Type":"text/plain;charset=utf-8" },
-      body: JSON.stringify({ electric: state.electric, gas: state.gas, water: state.water })
+      body: JSON.stringify({
+        electric: state.electric,
+        gas: state.gas,
+        water: state.water
+      })
     })
       .then(function(res){ return res.json(); })
       .then(function(json){
         if(!json || !json.ok) throw new Error("bad response");
         setSyncStatus("スプレッドシートに保存済み " + nowStr(), "ok");
       })
-      .catch(function(){
+      .catch(function(err){
+        console.error("SyncPush Error:", err); // ブラウザのコンソールで詳細を確認できるように変更
         setSyncStatus("スプレッドシートへの保存に失敗しました（端末内には保存済み）", "err");
       });
   }

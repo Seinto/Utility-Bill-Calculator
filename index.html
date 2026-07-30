@@ -117,7 +117,7 @@
   .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
   .field-note{font-size:.68rem;color:var(--ink-soft);margin-top:2px;}
 
-  main{padding:16px 14px 0;max-width:840px;margin:0 auto;}
+  main{padding:16px 14px 0;max-width:960px;margin:0 auto;}
   section.panel{display:none;}
   section.panel.active{display:block;animation:fade .18s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
@@ -187,23 +187,28 @@
 
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);}
   table{border-collapse:collapse;width:100%;font-size:.78rem;min-width:640px;}
+  #s-table{min-width:900px;}
   thead th{
     background:#F7F5F0;
     color:var(--ink-soft);
     font-weight:700;
     padding:8px 8px;
     border-bottom:1px solid var(--line);
+    border-right:1px solid #EEEBE2;
     text-align:right;
     white-space:nowrap;
   }
+  thead th:last-child{border-right:none;}
   thead th:first-child, tbody td:first-child{text-align:left;}
   tbody td{
     padding:8px 8px;
     border-bottom:1px solid #EEEBE2;
+    border-right:1px solid #F0EEE6;
     text-align:right;
     font-variant-numeric:tabular-nums;
     white-space:nowrap;
   }
+  tbody td:last-child{border-right:none;}
   tbody tr:hover{background:#FAF9F5;}
   tbody td.actions{text-align:center;}
   tbody td.actions button{
@@ -226,7 +231,7 @@
 
   .empty{padding:26px 10px;text-align:center;color:var(--ink-soft);font-size:.8rem;}
 
-  footer{max-width:840px;margin:20px auto 0;padding:0 14px;color:var(--ink-soft);font-size:.68rem;line-height:1.6;}
+  footer{max-width:960px;margin:20px auto 0;padding:0 14px;color:var(--ink-soft);font-size:.68rem;line-height:1.6;}
   .toast{
     position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
     background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;
@@ -314,7 +319,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.2</span>
+    <span class="version-badge">v1.0.3</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
 </header>
@@ -439,10 +444,20 @@
       </div>
     </div>
     <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>計測月</th><th>56A合計</th><th>56A支払済</th><th>56B合計</th><th>総合計</th>
-        </tr></thead>
+      <table id="s-table">
+        <thead>
+          <tr>
+            <th rowspan="2" style="vertical-align:middle;">計測月</th>
+            <th colspan="4" style="text-align:center; background:#E9EEE7; color:var(--sum);">56A 負担額</th>
+            <th rowspan="2" style="vertical-align:middle; text-align:center;">56A<br>支払済</th>
+            <th colspan="4" style="text-align:center; background:#E7EAF2; color:var(--sync);">56B 負担額</th>
+            <th rowspan="2" style="vertical-align:middle;">総合計</th>
+          </tr>
+          <tr>
+            <th>電気</th><th>ガス</th><th>水道</th><th>56A小計</th>
+            <th>電気</th><th>ガス</th><th>水道</th><th>56B小計</th>
+          </tr>
+        </thead>
         <tbody id="s-body"></tbody>
       </table>
       <div class="empty" id="s-empty" style="display:none;">電気・ガス・水道のデータを入力すると、ここに自動集計されます。</div>
@@ -870,7 +885,7 @@ function doPost(e) {
   // ---------- summary ----------
   function renderSummary(elecRows, gasRows, waterMonthlyMap){
     var byMonth = {};
-    function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:0, eB:0, gA:0, gB:0, wA:0, wB:0, hasData:false}; return byMonth[m]; }
+    function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:null, eB:null, gA:null, gB:null, wA:null, wB:null, hasData:false}; return byMonth[m]; }
     elecRows.forEach(function(r){
       if(r.cost56A !== null && r.cost56B !== null){
         var b = ensure(r.month); b.eA = r.cost56A; b.eB = r.cost56B; b.hasData = true;
@@ -894,8 +909,8 @@ function doPost(e) {
     var grandTotal56A = 0, latest56A = null, latest56B = null;
     months.forEach(function(m){
       var b = byMonth[m];
-      var sum56A = b.eA + b.gA + b.wA;
-      var sum56B = b.eB + b.gB + b.wB;
+      var sum56A = (b.eA || 0) + (b.gA || 0) + (b.wA || 0);
+      var sum56B = (b.eB || 0) + (b.gB || 0) + (b.wB || 0);
       var total = sum56A + sum56B;
 
       grandTotal56A += sum56A;
@@ -907,10 +922,12 @@ function doPost(e) {
       var tr = document.createElement("tr");
       tr.innerHTML =
         "<td>"+monthLabel(m)+"</td>"+
+        tdMaybeYen(b.eA)+ tdMaybeYen(b.gA)+ tdMaybeYen(b.wA)+
         "<td><strong>"+fmtYen(sum56A)+"</strong></td>"+
         "<td class=\"center\"><input type=\"checkbox\" class=\"chk-paid\" data-month=\""+m+"\" "+(isPaid ? "checked" : "")+"></td>"+
-        "<td>"+fmtYen(sum56B)+"</td>"+
-        "<td>"+fmtYen(total)+"</td>";
+        tdMaybeYen(b.eB)+ tdMaybeYen(b.gB)+ tdMaybeYen(b.wB)+
+        "<td><strong>"+fmtYen(sum56B)+"</strong></td>"+
+        "<td><strong>"+fmtYen(total)+"</strong></td>";
       body.appendChild(tr);
     });
 

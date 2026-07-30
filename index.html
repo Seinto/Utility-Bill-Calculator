@@ -352,7 +352,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.8</span>
+    <span class="version-badge">v1.0.9</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動計算します</p>
 </header>
@@ -573,49 +573,7 @@
       <ol>
         <li>Googleドライブで新しい「Googleスプレッドシート」を作成します。</li>
         <li>メニューの <strong>[拡張機能] &gt; [Apps Script]</strong> を開きます。</li>
-        <li>表示されたエディタの内容を全て消去し、以下のスクリプトを貼り付けて保存します：
-<pre><code>function doGet() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet();
-  var data = {};
-  ['electric', 'gas', 'water', 'paid56a'].forEach(function(name) {
-    var s = sheet.getSheetByName(name);
-    if (!s) { data[name] = []; return; }
-    var vals = s.getDataRange().getDisplayValues(); 
-    if (vals.length &lt;= 1) { data[name] = []; return; }
-    var head = vals[0];
-    data[name] = vals.slice(1).map(function(row) {
-      var obj = {};
-      head.forEach(function(h, i) { obj[h] = row[i]; });
-      return obj;
-    });
-  });
-  return ContentService.createTextOutput(JSON.stringify({ok:true, data:data}))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  try {
-    var param = JSON.parse(e.postData.contents);
-    var sheet = SpreadsheetApp.getActiveSpreadsheet();
-    ['electric', 'gas', 'water', 'paid56a'].forEach(function(name) {
-      var s = sheet.getSheetByName(name) || sheet.insertSheet(name);
-      s.clear();
-      var list = param[name] || [];
-      if (list.length === 0) return;
-      var keys = Object.keys(list[0]);
-      s.appendRow(keys);
-      list.forEach(function(item) {
-        s.appendRow(keys.map(function(k) { return item[k]; }));
-      });
-    });
-    return ContentService.createTextOutput(JSON.stringify({ok:true}))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({ok:false, error:err.toString()}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}</code></pre>
-        </li>
+        <li>表示されたエディタの内容を全て消去し、最新のGASスクリプトを貼り付けて保存します。</li>
         <li>右上の <strong>[デプロイ] &gt; [新しいデプロイ]</strong> をクリックします。</li>
         <li>種類の選択で <strong>[ウェブアプリ]</strong> を選択します。</li>
         <li>設定を以下のように変更します：
@@ -651,7 +609,6 @@ function doPost(e) {
   var chartInstance = null;
   var currentSummaryByMonth = {};
 
-  // Service Worker Registration for PWA
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('./sw.js')
@@ -701,7 +658,6 @@ function doPost(e) {
     return d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");
   }
 
-  // getDisplayValues() 等でのカンマ(1,564)・記号・空白を除去して数値化
   function normNum(v){
     if(v === null || v === undefined || v === "") return null;
     var cleaned = String(v).replace(/[,￥¥\s]/g, "");
@@ -709,7 +665,6 @@ function doPost(e) {
     return isNaN(n) ? null : n;
   }
 
-  // スラッシュ(2026/04)やハイフン(2026-04)の表記ゆれを統一
   function normalizeMonth(m){
     if(!m) return "";
     if(m instanceof Date) return m.getFullYear()+"-"+String(m.getMonth()+1).padStart(2,"0");
@@ -746,7 +701,6 @@ function doPost(e) {
           costTotal: normNum(r.costTotal)
         }; }).filter(function(r){ return r.month && r.meter56B !== null && r.meterTotal !== null && r.costTotal !== null; });
 
-        // 56A 支払状況の読み込み
         if(json.data.paid56a){
           paid56A = {};
           json.data.paid56a.forEach(function(r){
@@ -769,25 +723,22 @@ function doPost(e) {
       });
   }
 
-  function syncPush(){
+  function syncPush(targetSheet, targetData, isDelete){
     if(!gsheetUrl) return Promise.resolve();
     setSyncStatus("保存中…");
 
-    var paidList = Object.keys(paid56A).map(function(m){
-      return { month: m, paid: paid56A[m] };
-    });
+    var payload = {
+      sheet: targetSheet,
+      action: isDelete ? "delete" : "update",
+      data: targetData
+    };
 
     return fetch(gsheetUrl, {
       method:"POST",
       mode: "cors",
       redirect: "follow",
       headers:{ "Content-Type":"text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        electric: state.electric,
-        gas: state.gas,
-        water: state.water,
-        paid56a: paidList
-      })
+      body: JSON.stringify(payload)
     })
       .then(function(res){ return res.json(); })
       .then(function(json){
@@ -808,7 +759,6 @@ function doPost(e) {
     toast._h = setTimeout(function(){ t.classList.remove("show"); }, 1800);
   }
 
-  // ---------- helpers ----------
   function fmtNum(n, digits){
     if(n === null || n === undefined || isNaN(n)) return null;
     return Number(n).toLocaleString("ja-JP", {maximumFractionDigits: digits === undefined ? 1 : digits, minimumFractionDigits:0});
@@ -837,7 +787,6 @@ function doPost(e) {
     return indexToMonth(monthToIndex(m) + n);
   }
 
-  // ---------- electric (前月差分で計算) ----------
   function computeElectric(){
     var rows = state.electric.slice();
     sortByMonth(rows);
@@ -885,7 +834,6 @@ function doPost(e) {
     });
   }
 
-  // ---------- gas ----------
   function computeGas(elecRows){
     var elecByMonth = {};
     elecRows.forEach(function(r){ elecByMonth[r.month] = r; });
@@ -924,7 +872,6 @@ function doPost(e) {
     return rows;
   }
 
-  // ---------- water (前月差分で計算) ----------
   function computeWater(){
     var rows = state.water.slice();
     sortByMonth(rows);
@@ -972,7 +919,6 @@ function doPost(e) {
     return rows;
   }
 
-  // ---------- summary & graph ----------
   function renderSummary(elecRows, gasRows, waterRows){
     var byMonth = {};
     function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:null, eB:null, gA:null, gB:null, wA:null, wB:null, hasData:false}; return byMonth[m]; }
@@ -1029,7 +975,7 @@ function doPost(e) {
         var m = this.dataset.month;
         paid56A[m] = this.checked;
         savePaid();
-        syncPush(); // チェック変更時にもスプレッドシートへ同期
+        syncPush("paid56a", { month: m, paid: this.checked });
         toast(monthLabel(m) + " の56A支払状況を更新しました");
       });
     });
@@ -1212,7 +1158,7 @@ function doPost(e) {
     state[kind] = state[kind].filter(function(r){ return r.month !== month; });
     save();
     renderAll();
-    syncPush();
+    syncPush(kind, { month: month }, true);
     toast("削除しました");
   }
 
@@ -1278,14 +1224,17 @@ function doPost(e) {
     var total = parseFloat(document.getElementById("e-total").value);
     var cost = parseFloat(document.getElementById("e-cost").value);
     if(!month || isNaN(b) || isNaN(total) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    
+    var entry = {month:month, meter56B:b, meterTotal:total, costTotal:cost};
     if(editing.electric && editing.electric !== month){
       state.electric = state.electric.filter(function(r){ return r.month !== editing.electric; });
+      syncPush("electric", { month: editing.electric }, true);
     }
-    upsert("electric", {month:month, meter56B:b, meterTotal:total, costTotal:cost});
+    upsert("electric", entry);
     save();
     cancelEdit("electric");
     renderAll();
-    syncPush();
+    syncPush("electric", entry);
     toast(monthLabel(month) + " の電気データを保存しました");
   });
   document.getElementById("e-cancel").addEventListener("click", function(){ cancelEdit("electric"); });
@@ -1295,14 +1244,17 @@ function doPost(e) {
     var usage = parseFloat(document.getElementById("g-usage").value);
     var cost = parseFloat(document.getElementById("g-cost").value);
     if(!month || isNaN(usage) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    
+    var entry = {month:month, usageTotal:usage, costTotal:cost};
     if(editing.gas && editing.gas !== month){
       state.gas = state.gas.filter(function(r){ return r.month !== editing.gas; });
+      syncPush("gas", { month: editing.gas }, true);
     }
-    upsert("gas", {month:month, usageTotal:usage, costTotal:cost});
+    upsert("gas", entry);
     save();
     cancelEdit("gas");
     renderAll();
-    syncPush();
+    syncPush("gas", entry);
     toast(monthLabel(month) + " のガスデータを保存しました");
   });
   document.getElementById("g-cancel").addEventListener("click", function(){ cancelEdit("gas"); });
@@ -1313,14 +1265,17 @@ function doPost(e) {
     var total = parseFloat(document.getElementById("w-total").value);
     var cost = parseFloat(document.getElementById("w-cost").value);
     if(!month || isNaN(b) || isNaN(total) || isNaN(cost)){ toast("すべての項目を入力してください"); return; }
+    
+    var entry = {month:month, meter56B:b, meterTotal:total, costTotal:cost};
     if(editing.water && editing.water !== month){
       state.water = state.water.filter(function(r){ return r.month !== editing.water; });
+      syncPush("water", { month: editing.water }, true);
     }
-    upsert("water", {month:month, meter56B:b, meterTotal:total, costTotal:cost});
+    upsert("water", entry);
     save();
     cancelEdit("water");
     renderAll();
-    syncPush();
+    syncPush("water", entry);
     toast(monthLabel(month) + " の水道データを保存しました");
   });
   document.getElementById("w-cancel").addEventListener("click", function(){ cancelEdit("water"); });

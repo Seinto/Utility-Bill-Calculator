@@ -309,7 +309,7 @@
   .modal {
     background: var(--card);
     border-radius: var(--radius);
-    max-width: 600px;
+    max-width: 680px;
     width: 100%;
     max-height: 85vh;
     display: flex;
@@ -337,12 +337,32 @@
   .modal-body ol { padding-left: 20px; margin: 8px 0; }
   .modal-body li { margin-bottom: 8px; }
   .modal-body pre {
-    background: #F7F5F0;
-    padding: 10px;
+    background: #20303D;
+    color: #F3F1EC;
+    padding: 12px;
     border-radius: 6px;
-    border: 1px solid var(--line);
     overflow-x: auto;
     font-size: .72rem;
+    font-family: monospace;
+    white-space: pre;
+    line-height: 1.4;
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    font-weight: bold;
+  }
+  .btn-copy {
+    border: 1px solid var(--line);
+    background: var(--paper);
+    padding: 3px 8px;
+    font-size: .7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--ink);
   }
 </style>
 </head>
@@ -352,7 +372,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.9</span>
+    <span class="version-badge">v1.1.0</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動計算します</p>
 </header>
@@ -540,7 +560,7 @@
     <div class="card">
       <h2 class="accent-sync">
         Googleスプレッドシート連携
-        <button type="button" class="info-btn" id="gs-info-btn" title="設定手順を表示">
+        <button type="button" class="info-btn" id="gs-info-btn" title="設定手順とGASコードを表示">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
         </button>
       </h2>
@@ -549,7 +569,7 @@
         <div class="field full">
           <label for="gs-url">Web App URL</label>
           <input type="url" id="gs-url" placeholder="https://script.google.com/macros/s/.../exec">
-          <span class="field-note">詳しい連携手順は右上の (ℹ️) ボタンをクリックしてください</span>
+          <span class="field-note">連携手順およびGASコードは右上の (ℹ️) ボタンをクリックして確認できます</span>
         </div>
       </div>
       <div class="btn-row">
@@ -566,14 +586,117 @@
 <div class="modal-overlay" id="info-modal">
   <div class="modal">
     <div class="modal-header">
-      <h3>Googleスプレッドシート連携の手順</h3>
+      <h3>Googleスプレッドシート連携の手順 & GASコード</h3>
       <button class="modal-close" id="modal-close-btn">&times;</button>
     </div>
     <div class="modal-body">
       <ol>
         <li>Googleドライブで新しい「Googleスプレッドシート」を作成します。</li>
         <li>メニューの <strong>[拡張機能] &gt; [Apps Script]</strong> を開きます。</li>
-        <li>表示されたエディタの内容を全て消去し、最新のGASスクリプトを貼り付けて保存します。</li>
+        <li>表示されたエディタの内容を全て消去し、以下の最新コードを貼り付けて保存します。</li>
+      </ol>
+
+      <div class="code-header">
+        <span>GASコード (最新版)</span>
+        <button class="btn-copy" id="btn-copy-gas">コードをコピー</button>
+      </div>
+      <pre><code id="gas-code-block">function doGet() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet();
+  var data = {};
+  
+  ['electric', 'gas', 'water', 'paid56a'].forEach(function(name) {
+    var s = sheet.getSheetByName(name);
+    if (!s) { data[name] = []; return; }
+    
+    var vals = s.getDataRange().getDisplayValues(); 
+    if (vals.length <= 1) { data[name] = []; return; }
+    var head = vals[0];
+    data[name] = vals.slice(1).map(function(row) {
+      var obj = {};
+      head.forEach(function(h, i) { obj[h] = row[i]; });
+      return obj;
+    });
+  });
+  return ContentService.createTextOutput(JSON.stringify({ok:true, data:data}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    var param = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet();
+    
+    var sheetName = param.sheet; // 'electric', 'gas', 'water', 'paid56a'
+    var action = param.action;   // 'update' または 'delete'
+    var item = param.data;       // 変更データオブジェクト
+
+    if (sheetName && item && item.month) {
+      var s = sheet.getSheetByName(sheetName) || sheet.insertSheet(sheetName);
+      var vals = s.getDataRange().getDisplayValues();
+      
+      // シートが空ならヘッダーを作成
+      if (vals.length === 0 || vals[0].length === 0 || vals[0][0] === "") {
+        s.clear();
+        var keys = Object.keys(item);
+        s.appendRow(keys);
+        vals = [keys];
+      }
+      
+      var head = vals[0];
+      var monthColIdx = head.indexOf("month");
+      if (monthColIdx === -1) {
+        monthColIdx = 0;
+      }
+
+      // 同一年月データがある行を全て取得（末尾から削除処理するため逆順保持）
+      var matchingRowIndices = [];
+      for (var i = 1; i < vals.length; i++) {
+        if (vals[i][monthColIdx] === item.month) {
+          matchingRowIndices.push(i + 1); // 1-indexed
+        }
+      }
+
+      if (action === "delete") {
+        // 対象年月の行をすべて削除（重複があった場合も全消去）
+        for (var d = matchingRowIndices.length - 1; d >= 0; d--) {
+          s.deleteRow(matchingRowIndices[d]);
+        }
+      } else {
+        // 更新 または 新規追加
+        var rowData = head.map(function(k) { return item[k] !== undefined ? item[k] : ""; });
+
+        if (matchingRowIndices.length > 0) {
+          // 最初の1行を最新データで上書き
+          var targetRow = matchingRowIndices[0];
+          s.getRange(targetRow, 1, 1, head.length).setValues([rowData]);
+
+          // 万が一同年月が複数行存在していた場合は、残りの重複行を削除して最新1行に統合
+          for (var r = matchingRowIndices.length - 1; r > 0; r--) {
+            s.deleteRow(matchingRowIndices[r]);
+          }
+        } else {
+          // 存在しない年月なら新規追加
+          s.appendRow(rowData);
+        }
+      }
+
+      // データ行を計測月(month列)を基準に昇順ソート（古い月 -> 新しい月）
+      var lastRow = s.getLastRow();
+      var lastCol = s.getLastColumn();
+      if (lastRow > 2) {
+        s.getRange(2, 1, lastRow - 1, lastCol).sort({ column: monthColIdx + 1, ascending: true });
+      }
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ok:true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({ok:false, error:err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</code></pre>
+
+      <ol start="4">
         <li>右上の <strong>[デプロイ] &gt; [新しいデプロイ]</strong> をクリックします。</li>
         <li>種類の選択で <strong>[ウェブアプリ]</strong> を選択します。</li>
         <li>設定を以下のように変更します：
@@ -1296,7 +1419,7 @@
     syncPull();
   });
 
-  // ---------- info modal ----------
+  // ---------- info modal & copy btn ----------
   var modalEl = document.getElementById("info-modal");
   document.getElementById("gs-info-btn").addEventListener("click", function(){
     modalEl.classList.add("active");
@@ -1306,6 +1429,15 @@
   });
   modalEl.addEventListener("click", function(e){
     if(e.target === modalEl) modalEl.classList.remove("active");
+  });
+
+  document.getElementById("btn-copy-gas").addEventListener("click", function(){
+    var codeText = document.getElementById("gas-code-block").innerText;
+    navigator.clipboard.writeText(codeText).then(function(){
+      toast("GASコードをクリップボードにコピーしました");
+    }).catch(function(){
+      toast("コピーに失敗しました");
+    });
   });
 
   // ---------- tabs ----------

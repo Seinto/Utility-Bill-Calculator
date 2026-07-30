@@ -352,7 +352,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.5</span>
+    <span class="version-badge">v1.0.6</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動計算します</p>
 </header>
@@ -782,7 +782,7 @@ function doPost(e) {
     return indexToMonth(monthToIndex(m) + n);
   }
 
-  // ---------- electric ----------
+  // ---------- electric (前月差分で計算) ----------
   function computeElectric(){
     var rows = state.electric.slice();
     sortByMonth(rows);
@@ -791,18 +791,18 @@ function doPost(e) {
       r.meter56A = r.meterTotal - r.meter56B;
     }
     for(i=0;i<rows.length;i++){
-      var cur = rows[i], next = rows[i+1];
-      if(!next){
+      var prev = rows[i-1], cur = rows[i];
+      if(!prev){
         cur.usage56A = null; cur.usage56B = null; cur.usageTotal = null;
         cur.cost56A = null; cur.cost56B = null;
         continue;
       }
-      var u56A = next.meter56A - cur.meter56A; if(u56A < 0) u56A = 0;
-      var u56B = next.meter56B - cur.meter56B; if(u56B < 0) u56B = 0;
-      var uT   = next.meterTotal - cur.meterTotal; if(uT < 0) uT = 0;
+      var u56A = cur.meter56A - prev.meter56A; if(u56A < 0) u56A = 0;
+      var u56B = cur.meter56B - prev.meter56B; if(u56B < 0) u56B = 0;
+      var uT   = cur.meterTotal - prev.meterTotal; if(uT < 0) uT = 0;
       cur.usage56A = u56A; cur.usage56B = u56B; cur.usageTotal = uT;
-      cur.cost56A = (u56A === 0) ? 0 : cur.costTotal * u56A / uT;
-      cur.cost56B = (u56B === 0) ? 0 : cur.costTotal * u56B / uT;
+      cur.cost56A = (uT === 0) ? 0 : cur.costTotal * u56A / uT;
+      cur.cost56B = (uT === 0) ? 0 : cur.costTotal * u56B / uT;
     }
     return rows;
   }
@@ -869,7 +869,7 @@ function doPost(e) {
     return rows;
   }
 
-  // ---------- water (按分なし直接集計) ----------
+  // ---------- water (前月差分で計算) ----------
   function computeWater(){
     var rows = state.water.slice();
     sortByMonth(rows);
@@ -877,15 +877,15 @@ function doPost(e) {
       rows[i].meter56A = rows[i].meterTotal - rows[i].meter56B;
     }
     for(i=0;i<rows.length;i++){
-      var cur = rows[i], next = rows[i+1];
-      if(!next){
+      var prev = rows[i-1], cur = rows[i];
+      if(!prev){
         cur.usage56A = null; cur.usage56B = null; cur.usageTotal = null;
         cur.cost56A = null; cur.cost56B = null;
         continue;
       }
-      var u56A = next.meter56A - cur.meter56A; if(u56A < 0) u56A = 0;
-      var u56B = next.meter56B - cur.meter56B; if(u56B < 0) u56B = 0;
-      var uT   = next.meterTotal - cur.meterTotal; if(uT < 0) uT = 0;
+      var u56A = cur.meter56A - prev.meter56A; if(u56A < 0) u56A = 0;
+      var u56B = cur.meter56B - prev.meter56B; if(u56B < 0) u56B = 0;
+      var uT   = cur.meterTotal - prev.meterTotal; if(uT < 0) uT = 0;
       cur.usage56A = u56A; cur.usage56B = u56B; cur.usageTotal = uT;
       cur.cost56A = (uT === 0) ? 0 : cur.costTotal * u56A / uT;
       cur.cost56B = (uT === 0) ? 0 : cur.costTotal * u56B / uT;

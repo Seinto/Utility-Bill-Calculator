@@ -117,7 +117,7 @@
   .sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
   .field-note{font-size:.68rem;color:var(--ink-soft);margin-top:2px;}
 
-  main{padding:16px 14px 0;max-width:720px;margin:0 auto;}
+  main{padding:16px 14px 0;max-width:840px;margin:0 auto;}
   section.panel{display:none;}
   section.panel.active{display:block;animation:fade .18s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
@@ -212,20 +212,21 @@
   }
   tbody td.actions button.del{color:var(--danger);}
   td.muted{color:#B7B0A0;}
+  td.center{text-align:center;}
   .subhead{font-size:.68rem;color:var(--ink-soft);margin:2px 0 10px;}
 
-  .summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+  .summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
   .stat{
     background:var(--sum-bg);
     border-radius:var(--radius);
     padding:12px 14px;
   }
   .stat .label{font-size:.68rem;color:var(--ink-soft);font-weight:600;}
-  .stat .value{font-size:1.25rem;font-weight:700;color:var(--sum);font-variant-numeric:tabular-nums;margin-top:2px;}
+  .stat .value{font-size:1.2rem;font-weight:700;color:var(--sum);font-variant-numeric:tabular-nums;margin-top:2px;}
 
   .empty{padding:26px 10px;text-align:center;color:var(--ink-soft);font-size:.8rem;}
 
-  footer{max-width:720px;margin:20px auto 0;padding:0 14px;color:var(--ink-soft);font-size:.68rem;line-height:1.6;}
+  footer{max-width:840px;margin:20px auto 0;padding:0 14px;color:var(--ink-soft);font-size:.68rem;line-height:1.6;}
   .toast{
     position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
     background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;
@@ -233,6 +234,14 @@
     z-index:50;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  /* チェックボックス */
+  .chk-paid {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--ok);
+  }
 
   /* インフォメーションボタン & モーダル関連 */
   .info-btn {
@@ -305,7 +314,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.1</span>
+    <span class="version-badge">v1.0.2</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
 </header>
@@ -321,7 +330,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>水道
   </button>
   <button data-tab="summary">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="12" width="4" height="8"/><rect x="10" y="7" width="4" height="13"/><rect x="16" y="3" width="4" height="17"/></svg>56A合計金額
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="12" width="4" height="8"/><rect x="10" y="7" width="4" height="13"/><rect x="16" y="3" width="4" height="17"/></svg>合計金額
   </button>
   <button data-tab="settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M3 12h3M18 12h3M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/></svg>設定
@@ -421,17 +430,18 @@
   <!-- 集計 -->
   <section class="panel" id="summary">
     <div class="card">
-      <h2 class="accent-summary">56A合計金額</h2>
-      <div class="subhead">各月の電気・ガス・水道について 56A 負担分の料金を合算した表です(水道は隔月検針分を対象月に均等按分しています)</div>
+      <h2 class="accent-summary">合計金額</h2>
+      <div class="subhead">各月の電気・ガス・水道について 56A / 56B の各負担金額および総額を集計した表です。56Aの支払状況をチェックボックスで管理できます</div>
       <div class="summary-grid">
         <div class="stat"><div class="label">直近月の56A合計</div><div class="value" id="s-latest">−</div></div>
+        <div class="stat"><div class="label">直近月の56B合計</div><div class="value" id="s-latest-b">−</div></div>
         <div class="stat"><div class="label">全期間の56A合計</div><div class="value" id="s-total">−</div></div>
       </div>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>計測月</th><th>電気(56A)</th><th>ガス(56A)</th><th>水道(56A)</th><th>合計(56A)</th>
+          <th>計測月</th><th>56A合計</th><th>56A支払済</th><th>56B合計</th><th>総合計</th>
         </tr></thead>
         <tbody id="s-body"></tbody>
       </table>
@@ -542,8 +552,10 @@ function doPost(e) {
 
   var STORAGE_KEY = "suido_kounetsu_v1";
   var CONFIG_KEY = "suido_kounetsu_gsheet_url_v1";
+  var PAID_56A_KEY = "suido_kounetsu_paid_56a_v1";
   var state = { electric: [], gas: [], water: [] };
   var editing = { electric: null, gas: null, water: null };
+  var paid56A = {};
   var gsheetUrl = "";
 
   // Service Worker Registration for PWA
@@ -560,12 +572,19 @@ function doPost(e) {
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
       if(raw){ state = JSON.parse(raw); }
+      var paidRaw = localStorage.getItem(PAID_56A_KEY);
+      if(paidRaw){ paid56A = JSON.parse(paidRaw); }
     }catch(e){ /* storage unavailable: continue with in-memory state */ }
   }
   function save(){
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }catch(e){ /* storage unavailable in this context; data stays in-memory for this session */ }
+  }
+  function savePaid(){
+    try{
+      localStorage.setItem(PAID_56A_KEY, JSON.stringify(paid56A));
+    }catch(e){ /* storage unavailable */ }
   }
 
   function loadConfig(){
@@ -851,12 +870,20 @@ function doPost(e) {
   // ---------- summary ----------
   function renderSummary(elecRows, gasRows, waterMonthlyMap){
     var byMonth = {};
-    function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, e:0, g:0, w:0, hasE:false, hasG:false, hasW:false}; return byMonth[m]; }
-    elecRows.forEach(function(r){ if(r.cost56A !== null){ var b = ensure(r.month); b.e = r.cost56A; b.hasE = true; } });
-    gasRows.forEach(function(r){ if(r.cost56A !== null){ var b = ensure(r.month); b.g = r.cost56A; b.hasG = true; } });
+    function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:0, eB:0, gA:0, gB:0, wA:0, wB:0, hasData:false}; return byMonth[m]; }
+    elecRows.forEach(function(r){
+      if(r.cost56A !== null && r.cost56B !== null){
+        var b = ensure(r.month); b.eA = r.cost56A; b.eB = r.cost56B; b.hasData = true;
+      }
+    });
+    gasRows.forEach(function(r){
+      if(r.cost56A !== null && r.cost56B !== null){
+        var b = ensure(r.month); b.gA = r.cost56A; b.gB = r.cost56B; b.hasData = true;
+      }
+    });
     Object.keys(waterMonthlyMap).forEach(function(m){
       var w = waterMonthlyMap[m];
-      var b = ensure(m); b.w = w.cost56A; b.hasW = true;
+      var b = ensure(m); b.wA = w.cost56A; b.wB = w.cost56B; b.hasData = true;
     });
 
     var months = Object.keys(byMonth).sort();
@@ -864,24 +891,42 @@ function doPost(e) {
     body.innerHTML = "";
     document.getElementById("s-empty").style.display = months.length ? "none" : "block";
 
-    var grandTotal = 0, latest = null;
+    var grandTotal56A = 0, latest56A = null, latest56B = null;
     months.forEach(function(m){
       var b = byMonth[m];
-      var total = b.e + b.g + b.w;
-      grandTotal += total;
-      latest = total;
+      var sum56A = b.eA + b.gA + b.wA;
+      var sum56B = b.eB + b.gB + b.wB;
+      var total = sum56A + sum56B;
+
+      grandTotal56A += sum56A;
+      latest56A = sum56A;
+      latest56B = sum56B;
+
+      var isPaid = !!paid56A[m];
+
       var tr = document.createElement("tr");
       tr.innerHTML =
         "<td>"+monthLabel(m)+"</td>"+
-        "<td>"+(b.hasE ? fmtYen(b.e) : "<span class=\"muted\">−</span>")+"</td>"+
-        "<td>"+(b.hasG ? fmtYen(b.g) : "<span class=\"muted\">−</span>")+"</td>"+
-        "<td>"+(b.hasW ? fmtYen(b.w) : "<span class=\"muted\">−</span>")+"</td>"+
-        "<td><strong>"+fmtYen(total)+"</strong></td>";
+        "<td><strong>"+fmtYen(sum56A)+"</strong></td>"+
+        "<td class=\"center\"><input type=\"checkbox\" class=\"chk-paid\" data-month=\""+m+"\" "+(isPaid ? "checked" : "")+"></td>"+
+        "<td>"+fmtYen(sum56B)+"</td>"+
+        "<td>"+fmtYen(total)+"</td>";
       body.appendChild(tr);
     });
 
-    document.getElementById("s-latest").textContent = latest === null ? "−" : fmtYen(latest);
-    document.getElementById("s-total").textContent = months.length ? fmtYen(grandTotal) : "−";
+    // チェックボックスのイベントリスナー設定
+    body.querySelectorAll(".chk-paid").forEach(function(chk){
+      chk.addEventListener("change", function(){
+        var m = this.dataset.month;
+        paid56A[m] = this.checked;
+        savePaid();
+        toast(monthLabel(m) + " の56A支払状況を更新しました");
+      });
+    });
+
+    document.getElementById("s-latest").textContent = latest56A === null ? "−" : fmtYen(latest56A);
+    document.getElementById("s-latest-b").textContent = latest56B === null ? "−" : fmtYen(latest56B);
+    document.getElementById("s-total").textContent = months.length ? fmtYen(grandTotal56A) : "−";
   }
 
   function tdMaybe(v, digits){

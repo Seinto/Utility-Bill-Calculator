@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#20303D">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<!-- Chart.js 読み込み -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   :root{
     --paper:#F3F1EC;
@@ -150,7 +152,7 @@
   .field{display:flex;flex-direction:column;gap:4px;}
   .field.full{grid-column:1/-1;}
   .field label{font-size:.68rem;color:var(--ink-soft);font-weight:600;letter-spacing:.02em;}
-  .field input{
+  .field input, .field select{
     border:1px solid var(--line);
     border-radius:7px;
     padding:9px 10px;
@@ -159,7 +161,7 @@
     color:var(--ink);
     font-variant-numeric:tabular-nums;
   }
-  .field input:focus{outline:2px solid var(--focus,#20303D);outline-offset:1px;}
+  .field input:focus, .field select:focus{outline:2px solid var(--focus,#20303D);outline-offset:1px;}
   .btn-row{display:flex;gap:8px;margin-top:14px;}
   button.primary{
     flex:1;
@@ -228,6 +230,37 @@
   }
   .stat .label{font-size:.68rem;color:var(--ink-soft);font-weight:600;}
   .stat .value{font-size:1.2rem;font-weight:700;color:var(--sum);font-variant-numeric:tabular-nums;margin-top:2px;}
+
+  /* グラフ関連のスタイル */
+  .chart-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+    background: #FAF9F5;
+    padding: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+  }
+  .chart-chk-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    user-select: none;
+    margin-top: auto;
+    margin-bottom: auto;
+    padding-top: 18px;
+  }
+  .chart-container {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    margin-top: 10px;
+  }
 
   .empty{padding:26px 10px;text-align:center;color:var(--ink-soft);font-size:.8rem;}
 
@@ -319,7 +352,7 @@
   <h1>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
     水道光熱費メーター管理
-    <span class="version-badge">v1.0.3</span>
+    <span class="version-badge">v1.0.4</span>
   </h1>
   <p>電気・ガス・水道の検針値と請求額を記録し、56A/56B の負担額を自動按分します</p>
 </header>
@@ -442,7 +475,46 @@
         <div class="stat"><div class="label">直近月の56B合計</div><div class="value" id="s-latest-b">−</div></div>
         <div class="stat"><div class="label">全期間の56A合計</div><div class="value" id="s-total">−</div></div>
       </div>
+
+      <!-- グラフ描画エリア -->
+      <div style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px;">
+        <h3 style="font-size: .82rem; margin: 0 0 10px; color: var(--ink);">料金推移グラフ</h3>
+        <div class="chart-controls">
+          <div class="field">
+            <label for="chart-target">対象</label>
+            <select id="chart-target">
+              <option value="56A">56A</option>
+              <option value="56B">56B</option>
+              <option value="TOTAL">56A + 56B (合計)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="chart-type">種別</label>
+            <select id="chart-type">
+              <option value="total">合計金額</option>
+              <option value="elec">電気</option>
+              <option value="gas">ガス</option>
+              <option value="water">水道</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="chart-period">表示単位</label>
+            <select id="chart-period">
+              <option value="monthly">月別</option>
+              <option value="yearly">年別</option>
+            </select>
+          </div>
+          <label class="chart-chk-label">
+            <input type="checkbox" id="chart-compare" class="chk-paid">
+            <span id="chart-compare-label">前月と比較する</span>
+          </label>
+        </div>
+        <div class="chart-container">
+          <canvas id="summaryChart"></canvas>
+        </div>
+      </div>
     </div>
+
     <div class="table-wrap">
       <table id="s-table">
         <thead>
@@ -572,6 +644,8 @@ function doPost(e) {
   var editing = { electric: null, gas: null, water: null };
   var paid56A = {};
   var gsheetUrl = "";
+  var chartInstance = null;
+  var currentSummaryByMonth = {};
 
   // Service Worker Registration for PWA
   if ('serviceWorker' in navigator) {
@@ -589,12 +663,12 @@ function doPost(e) {
       if(raw){ state = JSON.parse(raw); }
       var paidRaw = localStorage.getItem(PAID_56A_KEY);
       if(paidRaw){ paid56A = JSON.parse(paidRaw); }
-    }catch(e){ /* storage unavailable: continue with in-memory state */ }
+    }catch(e){ /* storage unavailable */ }
   }
   function save(){
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }catch(e){ /* storage unavailable in this context; data stays in-memory for this session */ }
+    }catch(e){ /* storage unavailable */ }
   }
   function savePaid(){
     try{
@@ -882,17 +956,17 @@ function doPost(e) {
     return rows;
   }
 
-  // ---------- summary ----------
+  // ---------- summary & graph ----------
   function renderSummary(elecRows, gasRows, waterMonthlyMap){
     var byMonth = {};
     function ensure(m){ if(!byMonth[m]) byMonth[m] = {month:m, eA:null, eB:null, gA:null, gB:null, wA:null, wB:null, hasData:false}; return byMonth[m]; }
     elecRows.forEach(function(r){
-      if(r.cost56A !== null && r.cost56B !== null){
+      if(r.cost56A !== null && r.cost56A !== undefined){
         var b = ensure(r.month); b.eA = r.cost56A; b.eB = r.cost56B; b.hasData = true;
       }
     });
     gasRows.forEach(function(r){
-      if(r.cost56A !== null && r.cost56B !== null){
+      if(r.cost56A !== null && r.cost56A !== undefined){
         var b = ensure(r.month); b.gA = r.cost56A; b.gB = r.cost56B; b.hasData = true;
       }
     });
@@ -900,6 +974,8 @@ function doPost(e) {
       var w = waterMonthlyMap[m];
       var b = ensure(m); b.wA = w.cost56A; b.wB = w.cost56B; b.hasData = true;
     });
+
+    currentSummaryByMonth = byMonth;
 
     var months = Object.keys(byMonth).sort();
     var body = document.getElementById("s-body");
@@ -931,7 +1007,6 @@ function doPost(e) {
       body.appendChild(tr);
     });
 
-    // チェックボックスのイベントリスナー設定
     body.querySelectorAll(".chk-paid").forEach(function(chk){
       chk.addEventListener("change", function(){
         var m = this.dataset.month;
@@ -944,7 +1019,154 @@ function doPost(e) {
     document.getElementById("s-latest").textContent = latest56A === null ? "−" : fmtYen(latest56A);
     document.getElementById("s-latest-b").textContent = latest56B === null ? "−" : fmtYen(latest56B);
     document.getElementById("s-total").textContent = months.length ? fmtYen(grandTotal56A) : "−";
+
+    renderChart();
   }
+
+  function renderChart(){
+    var ctx = document.getElementById("summaryChart");
+    if(!ctx) return;
+
+    var target = document.getElementById("chart-target").value; // 56A, 56B, TOTAL
+    var type = document.getElementById("chart-type").value;     // total, elec, gas, water
+    var period = document.getElementById("chart-period").value; // monthly, yearly
+    var isCompare = document.getElementById("chart-compare").checked;
+
+    var compareLabelEl = document.getElementById("chart-compare-label");
+    if(period === "yearly") {
+      compareLabelEl.textContent = "前年と比較する";
+    } else {
+      compareLabelEl.textContent = "前月と比較する";
+    }
+
+    var months = Object.keys(currentSummaryByMonth).sort();
+    if(months.length === 0){
+      if(chartInstance){ chartInstance.destroy(); chartInstance = null; }
+      return;
+    }
+
+    function getValue(m){
+      var b = currentSummaryByMonth[m];
+      if(!b) return 0;
+      var vA = 0, vB = 0;
+      if(type === "total"){
+        vA = (b.eA||0) + (b.gA||0) + (b.wA||0);
+        vB = (b.eB||0) + (b.gB||0) + (b.wB||0);
+      } else if(type === "elec"){
+        vA = b.eA||0; vB = b.eB||0;
+      } else if(type === "gas"){
+        vA = b.gA||0; vB = b.gB||0;
+      } else if(type === "water"){
+        vA = b.wA||0; vB = b.wB||0;
+      }
+      if(target === "56A") return vA;
+      if(target === "56B") return vB;
+      return vA + vB;
+    }
+
+    var labels = [];
+    var dataMain = [];
+    var dataComp = [];
+
+    if(period === "monthly"){
+      labels = months.map(function(m){ return monthLabel(m); });
+      dataMain = months.map(function(m){ return Math.round(getValue(m)); });
+      if(isCompare){
+        dataComp = months.map(function(m){
+          var prevM = addMonths(m, -1);
+          return Math.round(getValue(prevM));
+        });
+      }
+    } else {
+      // 年別集計
+      var yearlyMap = {};
+      months.forEach(function(m){
+        var y = m.split("-")[0];
+        if(!yearlyMap[y]) yearlyMap[y] = 0;
+        yearlyMap[y] += getValue(m);
+      });
+      var years = Object.keys(yearlyMap).sort();
+      labels = years.map(function(y){ return y + "年"; });
+      dataMain = years.map(function(y){ return Math.round(yearlyMap[y]); });
+      if(isCompare){
+        dataComp = years.map(function(y){
+          var prevY = String(parseInt(y, 10) - 1);
+          return yearlyMap[prevY] ? Math.round(yearlyMap[prevY]) : 0;
+        });
+      }
+    }
+
+    var themeColor = "#3C4A3E";
+    if(type === "elec") themeColor = "#C98A1F";
+    else if(type === "gas") themeColor = "#C4502A";
+    else if(type === "water") themeColor = "#256F8A";
+
+    var datasets = [{
+      label: "対象金額",
+      data: dataMain,
+      backgroundColor: themeColor,
+      borderColor: themeColor,
+      borderWidth: 1,
+      borderRadius: 4
+    }];
+
+    if(isCompare){
+      datasets.push({
+        label: period === "yearly" ? "前年金額" : "前月金額",
+        data: dataComp,
+        type: "line",
+        borderColor: "#94A3B8",
+        borderDash: [4, 4],
+        backgroundColor: "transparent",
+        pointBackgroundColor: "#94A3B8",
+        fill: false,
+        tension: 0.1
+      });
+    }
+
+    if(chartInstance){ chartInstance.destroy(); }
+
+    chartInstance = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: isCompare,
+            position: "top"
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ": ¥" + context.raw.toLocaleString();
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return "¥" + value.toLocaleString();
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // グラフコントローラーのイベント登録
+  document.getElementById("chart-target").addEventListener("change", renderChart);
+  document.getElementById("chart-type").addEventListener("change", renderChart);
+  document.getElementById("chart-period").addEventListener("change", renderChart);
+  document.getElementById("chart-compare").addEventListener("change", renderChart);
 
   function tdMaybe(v, digits){
     var s = fmtNum(v, digits);
